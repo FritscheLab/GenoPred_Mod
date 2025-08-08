@@ -1202,3 +1202,30 @@ rule ref_pgs:
       --plink2 plink2 \
       --test {params.testing} \
       --n_cores {threads} > {log} 2>&1"
+
+# Calculate raw, unscaled PGS in reference data
+rule ref_pgs_raw:
+  resources:
+    mem_mb=config['mem_target_pgs'],
+    time_min=2800
+  threads: config['cores_target_pgs']
+  input:
+    rules.prep_pgs.input
+  output:
+    touch(f"{outdir}/reference/pgs_score_files/ref_pgs_raw.done")
+  benchmark:
+    f"{outdir}/reference/benchmarks/ref_pgs_raw.txt"
+  log:
+    f"{outdir}/reference/logs/ref_pgs_raw.log"
+  conda:
+    "../envs/analysis.yaml"
+  params:
+    testing=config["testing"],
+    config_file = config["config_file"]
+  shell:
+    "Rscript ../Scripts/ref_scoring/ref_scoring_raw.R \
+      --config {params.config_file} \
+      --plink2 plink2 \
+      --test {params.testing} \
+      --n_cores {threads} > {log} 2>&1"
+
