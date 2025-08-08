@@ -130,3 +130,39 @@ rule target_pgs:
   input:
     expand(f"{outdir}/reference/target_checks/{{name}}/target_pgs.done", name=target_list_df['name'])
 
+####
+# Raw, unscaled PGS generation for all individuals
+####
+
+rule target_pgs_raw_i:
+  resources:
+    mem_mb=config['mem_target_pgs'],
+    time_min=2800
+  threads: config['cores_target_pgs']
+  input:
+    f"{outdir}/reference/target_checks/{{name}}/ancestry_reporter.done",
+    rules.ref_pgs.output,
+    rules.ref_pgs_raw.output
+  output:
+    touch(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done")
+  benchmark:
+    f"{outdir}/reference/benchmarks/target_pgs_raw_i-{{name}}.txt"
+  log:
+    f"{outdir}/reference/logs/target_pgs_raw_i-{{name}}.log"
+  conda:
+    "../envs/analysis.yaml"
+  params:
+    testing=config["testing"],
+    config_file = config["config_file"]
+  shell:
+    "Rscript ../Scripts/target_scoring/target_scoring_pipeline_raw.R \
+      --config {params.config_file} \
+      --name {wildcards.name} \
+      --plink2 plink2 \
+      --test {params.testing} \
+      --n_cores {threads} > {log} 2>&1"
+
+rule target_pgs_raw:
+  input:
+    expand(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done", name=target_list_df['name'])
+
