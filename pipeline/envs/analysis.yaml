@@ -1,6 +1,5 @@
 name: GenoPredPipe
 channels:
-  - dranew
   - bioconda
   - conda-forge
   - defaults

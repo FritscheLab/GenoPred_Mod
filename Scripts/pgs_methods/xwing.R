@@ -90,10 +90,8 @@ if(is.null(opt$populations)){
 
 # Create output directory
 opt$output_dir <- paste0(dirname(opt$output),'/')
-system(paste0('mkdir -p ',opt$output_dir))
-
-# Create temp directory
-tmp_dir <- tempdir()
+tmp_dir <- file.path(opt$output_dir,"tmp")
+system(paste0('mkdir -p ',tmp_dir))
 
 # Initiate log file
 log_file <- paste0(opt$output,'.log')
@@ -156,7 +154,17 @@ dir.create(paste0(tmp_dir,'/LOGODetect'))
 
 for(i in 1:nrow(gwas_pairs)){
   system(paste0(
-    'Rscript ', opt$xwing_repo, '/LOGODetect.R --sumstats ', paste0(paste0(tmp_dir, '/GWAS_sumstats_', gwas_pairs[i,],'_temp.txt'), collapse=','),' --n_gwas ', paste0(gwas_N[gwas_pairs[i,]], collapse=','), ' --ref_dir ', opt$logodetect_ref,' --pop ', paste0(populations[gwas_pairs[i,]], collapse=',') ,' --block_partition ', opt$xwing_repo,'/block_partition.txt --gc_snp ', opt$xwing_repo,'/1kg_hm3_snp.txt --out_dir ', tmp_dir, '/LOGODetect --n_cores ', opt$n_core,' --target_pop ', opt$populations,' --n_topregion 1000'
+    'Rscript ', opt$xwing_repo, '/LOGODetect.R ',
+    '--sumstats ', paste0(paste0(tmp_dir, '/GWAS_sumstats_', gwas_pairs[i,], '_temp.txt'), collapse=','), ' ',
+    '--n_gwas ', paste0(gwas_N[gwas_pairs[i,]], collapse=','), ' ',
+    '--ref_dir ', opt$logodetect_ref, ' ',
+    '--pop ', paste0(populations[gwas_pairs[i,]], collapse=','), ' ',
+    '--block_partition ', opt$xwing_repo, '/block_partition.txt ',
+    '--gc_snp ', opt$xwing_repo, '/1kg_hm3_snp.txt ',
+    '--out_dir ', tmp_dir, '/LOGODetect ',
+    '--n_cores ', opt$n_cores, ' ',
+    '--target_pop EUR ',
+    '--n_topregion 1000'
   ))
 }
 

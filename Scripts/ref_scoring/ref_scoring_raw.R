@@ -68,6 +68,11 @@ if (!is.na(opt$test)) {
 # Identify score files to be combined
 score_files <- list_score_files(opt$config)
 
+# Sort score files to ensure consistent processing order
+if (!is.null(score_files)) {
+    score_files <- score_files[order(score_files$method, score_files$name), ]
+}
+
 # Check whether score files exist and need processing for raw PGS
 if (!is.null(score_files)) {
     score_files_to_do <- data.table()
@@ -87,7 +92,8 @@ if (!is.null(score_files)) {
         }
     }
     log_add(log_file = log_file, message = paste0("After checking timestamps, ", nrow(score_files_to_do), "/", nrow(score_files), " score files will be used for raw reference scoring."))
-    score_files <- score_files_to_do
+    # Sort score files to ensure consistent processing order
+    score_files <- score_files_to_do[order(score_files_to_do$method, score_files_to_do$name), ]
 }
 
 if (is.null(score_files) || nrow(score_files) == 0) {
@@ -138,8 +144,8 @@ for (chr_i in CHROMS) {
     # Set number of batches according to the number of score files to combine
     num_batches <- max(c(1, min(c(opt$n_cores, floor(nrow(score_files) / 2)))))
     tmp_score_files <- paste0(tmp_dir, "/tmp_score.", score_files$method, ".", score_files$name, ".txt")
-    set.seed(1)
-    batches <- split(sample(tmp_score_files), rep(1:num_batches, length.out = length(tmp_score_files)))
+    # Use deterministic ordering instead of random sampling to ensure consistent column order
+    batches <- split(tmp_score_files, rep(1:num_batches, length.out = length(tmp_score_files)))
     log_add(log_file = log_file, message = paste0("Aggregating score files in ", num_batches, " batches."))
     foreach(i = 1:length(batches), .combine = c, .options.multicore = list(preschedule = FALSE)) %dopar% {
         system(paste0("paste -d ' ' ", paste(batches[[i]], collapse = " "), " > ", tmp_dir, "/tmp_batch_", i))
@@ -199,7 +205,7 @@ for (i in 1:nrow(score_files)) {
 
     # Extract scores for this specific score file
     scores_i <- scores[, c("FID", "IID", names(scores)[grepl(paste0("^score_file_", i, "\\."), names(scores))]), with = F]
-    names(scores_i) <- gsub(paste0("^score_file_", i, "\\."), "SCORE_", names(scores_i))
+    names(scores_i) <- gsub(paste0("^score_file_", i, "\\."), paste0(score_files$method[i], "_", score_files$name[i], "_"), names(scores_i))
 
     # Save raw scores without any scaling or ancestry adjustment
     output_i <- paste0(output_dir, "/ref-", score_files$name[i], "-AllAncestry.profiles")

@@ -84,6 +84,11 @@ if (!is.na(opt$test)) {
 # Identify score files to be combined
 score_files <- list_score_files(opt$config)
 
+# Sort score files to ensure consistent processing order
+if (!is.null(score_files)) {
+    score_files <- score_files[order(score_files$method, score_files$name), ]
+}
+
 if (is.null(score_files) || nrow(score_files) == 0) {
     log_add(log_file = log_file, message = paste0("No score files found for raw PGS generation."))
     end.time <- Sys.time()
@@ -114,7 +119,8 @@ for (i in 1:nrow(score_files)) {
     }
 }
 log_add(log_file = log_file, message = paste0("After checking timestamps, ", nrow(score_files_to_do), "/", nrow(score_files), " score files will be used for raw target scoring."))
-score_files <- score_files_to_do
+# Sort score files to ensure consistent processing order
+score_files <- score_files_to_do[order(score_files_to_do$method, score_files_to_do$name), ]
 
 if (nrow(score_files) == 0) {
     log_add(log_file = log_file, message = paste0("No score files to be processed for raw PGS generation."))
@@ -179,8 +185,8 @@ for (chr_i in CHROMS) {
     # Set number of batches according to the number of score files to combine
     num_batches <- max(c(1, min(c(opt$n_cores, floor(nrow(score_files) / 2)))))
     tmp_score_files <- paste0(tmp_dir, "/tmp_score.", score_files$method, ".", score_files$name, ".txt")
-    set.seed(1)
-    batches <- split(sample(tmp_score_files), rep(1:num_batches, length.out = length(tmp_score_files)))
+    # Use deterministic ordering instead of random sampling to ensure consistent column order
+    batches <- split(tmp_score_files, rep(1:num_batches, length.out = length(tmp_score_files)))
     log_add(log_file = log_file, message = paste0("Aggregating score files in ", num_batches, " batches."))
     foreach(i = 1:length(batches), .combine = c, .options.multicore = list(preschedule = FALSE)) %dopar% {
         system(paste0("paste -d ' ' ", paste(batches[[i]], collapse = " "), " > ", tmp_dir, "/tmp_batch_", i))
@@ -254,7 +260,7 @@ log_add(log_file = log_file, message = "Saving raw, unscaled polygenic scores fo
 
 for (i in 1:nrow(score_files)) {
     scores_i <- scores[, c("FID", "IID", names(scores)[grepl(paste0("^score_file_", i, "\\."), names(scores))]), with = F]
-    names(scores_i) <- gsub(paste0("^score_file_", i, "\\."), paste0(score_files$name[i], "_"), names(scores_i))
+    names(scores_i) <- gsub(paste0("^score_file_", i, "\\."), paste0(score_files$method[i], "_", score_files$name[i], "_"), names(scores_i))
     dir.create(paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i]), recursive = T)
     fwrite(scores_i, paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i], "/", opt$name, "-", score_files$name[i], "-AllAncestry-raw.profiles"), sep = " ", na = "NA", quote = F)
 }
