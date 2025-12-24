@@ -62,6 +62,14 @@ outdir <- read_param(config = opt$config, param = "outdir", return_obj = F)
 opt$output <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry")
 system(paste0("mkdir -p ", opt$output))
 
+# Directory to capture the plink --score weight file used for the run
+weights_dir <- paste0(opt$output, "/weights")
+dir.create(weights_dir, recursive = T, showWarnings = F)
+weight_file <- paste0(weights_dir, "/", opt$name, "-AllAncestry-raw.weights.score")
+if (file.exists(weight_file)) {
+    file.remove(weight_file)
+}
+
 # Create logs directory
 logs_dir <- paste0(outdir, "/", opt$name, "/logs")
 system(paste0("mkdir -p ", logs_dir))
@@ -159,6 +167,10 @@ log_add(log_file = log_file, message = paste0("Generating raw, unscaled PGS for 
 for (chr_i in CHROMS) {
     log_add(log_file = log_file, message = "########################")
     log_add(log_file = log_file, message = paste0("Processing chromosome ", chr_i, ":"))
+    tmp_all_score <- paste0(tmp_dir, "/all_score_chr", chr_i, ".txt")
+    if (file.exists(tmp_all_score)) {
+        file.remove(tmp_all_score)
+    }
 
     #####
     # Combine score files
@@ -196,8 +208,19 @@ for (chr_i in CHROMS) {
     # Paste batches together
     log_add(log_file = log_file, message = paste0("Aggregating batched score files."))
     tmp_batch_files <- paste0(tmp_dir, "/tmp_batch_", 1:length(batches))
-    system(paste0("paste -d ' ' ", tmp_dir, "/map.txt ", paste(tmp_batch_files, collapse = " "), " > ", tmp_dir, "/all_score.txt"))
+    system(paste0("paste -d ' ' ", tmp_dir, "/map.txt ", paste(tmp_batch_files, collapse = " "), " > ", tmp_all_score))
     system(paste0("rm ", paste(tmp_batch_files, collapse = " ")))
+    weight_stat <- file.info(tmp_all_score)
+    if (!file.exists(tmp_all_score) || is.na(weight_stat$size) || weight_stat$size == 0) {
+        stop(paste0("Weight file missing or empty: ", tmp_all_score))
+    }
+    # Append to run-level weight file (header only once)
+    if (!file.exists(weight_file)) {
+        file.copy(tmp_all_score, weight_file, overwrite = TRUE)
+    } else {
+        system(paste0("tail -n +2 ", shQuote(tmp_all_score), " >> ", shQuote(weight_file)))
+    }
+    log_add(log_file = log_file, message = paste0("Saved plink --score weight file for chr ", chr_i, ": ", tmp_all_score))
 
     # Perform polygenic risk scoring
     scores_i <-
@@ -205,7 +228,7 @@ for (chr_i in CHROMS) {
             pfile = opt$target_plink_chr,
             chr = chr_i,
             plink2 = opt$plink2,
-            score = paste0(tmp_dir, "/all_score.txt"),
+            score = tmp_all_score,
             keep = opt$target_keep, # This is NULL - includes ALL individuals
             threads = opt$n_cores,
             fbm = T
@@ -266,6 +289,12 @@ for (i in 1:nrow(score_files)) {
 }
 
 log_add(log_file = log_file, message = paste0("Saved raw, unscaled polygenic scores for ALL individuals to: ", outdir, "/", opt$name, "/pgs_raw/AllAncestry/"))
+
+weight_stat <- file.info(weight_file)
+if (!file.exists(weight_file) || is.na(weight_stat$size) || weight_stat$size == 0) {
+    stop(paste0("Missing weight file after scoring: ", weight_file))
+}
+log_add(log_file = log_file, message = paste0("All plink --score weights written to ", weight_file))
 
 end.time <- Sys.time()
 time.taken <- end.time - start.time

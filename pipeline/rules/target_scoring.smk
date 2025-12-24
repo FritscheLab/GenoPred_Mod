@@ -144,7 +144,8 @@ rule target_pgs_raw_i:
     rules.ref_pgs.output,
     rules.ref_pgs_raw.output
   output:
-    touch(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done")
+    weight_file = f"{outdir}/{{name}}/pgs_raw/AllAncestry/weights/{{name}}-AllAncestry-raw.weights.score",
+    done = touch(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done")
   benchmark:
     f"{outdir}/reference/benchmarks/target_pgs_raw_i-{{name}}.txt"
   log:
@@ -165,4 +166,3 @@ rule target_pgs_raw_i:
 rule target_pgs_raw:
   input:
     expand(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done", name=target_list_df['name'])
-
