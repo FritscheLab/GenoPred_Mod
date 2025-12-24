@@ -167,8 +167,9 @@ log_add(log_file = log_file, message = 'Estimating per-predictor heritabilities.
 system(paste0(opt$ldak, ' --cut-weights ', tmp_dir,'/sections --bfile ', tmp_dir, '/ref_merge --max-threads ', opt$n_cores))
 system(paste0(opt$ldak, ' --calc-weights-all ', tmp_dir,'/sections --bfile ', tmp_dir, '/ref_merge --max-threads ', opt$n_cores))
 system(paste0('mkdir ', tmp_dir, '/bld'))
-for(i in list.files(opt$ldak_tag)){
-  system(paste0('ln -s ', getwd(), '/', opt$ldak_tag, '/', i, ' ', tmp_dir, '/bld/', i))
+ldak_tag_dir <- normalizePath(opt$ldak_tag, winslash = '/', mustWork = TRUE)
+for(i in list.files(ldak_tag_dir)){
+  system(paste0('ln -s ', shQuote(file.path(ldak_tag_dir, i)), ' ', shQuote(file.path(tmp_dir, 'bld', i))))
 }
 system(paste0('ln -s ', tmp_dir, '/sections/weights.short ', tmp_dir,'/bld/bld65'))
 
