@@ -57,18 +57,19 @@ if (is.null(opt$name)) {
 
 # Read in outdir
 outdir <- read_param(config = opt$config, param = "outdir", return_obj = F)
+raw_pgs_dir <- read_param(config = opt$config, param = "raw_pgs_dir", return_obj = F)
+if (!is.null(raw_pgs_dir) && length(raw_pgs_dir) > 1) {
+    raw_pgs_dir <- raw_pgs_dir[1]
+}
 
 # Create output directory for raw PGS
 opt$output <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry")
 system(paste0("mkdir -p ", opt$output))
 
-# Directory to capture the plink --score weight file used for the run
-weights_dir <- paste0(opt$output, "/weights")
+# Store the combined plink --score weight file alongside the raw profiles
+weights_dir <- opt$output
 dir.create(weights_dir, recursive = T, showWarnings = F)
 weight_file <- paste0(weights_dir, "/", opt$name, "-AllAncestry-raw.weights.score")
-if (file.exists(weight_file)) {
-    file.remove(weight_file)
-}
 
 # Create logs directory
 logs_dir <- paste0(outdir, "/", opt$name, "/logs")
@@ -96,6 +97,7 @@ score_files <- list_score_files(opt$config)
 if (!is.null(score_files)) {
     score_files <- score_files[order(score_files$method, score_files$name), ]
 }
+score_files_all <- copy(score_files)
 
 if (is.null(score_files) || nrow(score_files) == 0) {
     log_add(log_file = log_file, message = paste0("No score files found for raw PGS generation."))
@@ -113,7 +115,7 @@ ancestry_reporter_file <- paste0(outdir, "/reference/target_checks/", opt$name, 
 ancestry_reporter_file_time <- file.info(ancestry_reporter_file)$mtime
 score_files_to_do <- data.table()
 for (i in 1:nrow(score_files)) {
-    pgs_i <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i], "/", opt$name, "-", score_files$name[i], "-AllAncestry-raw.profiles")
+    pgs_i <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i], "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.profiles")
     score_i <- paste0(outdir, "/reference/pgs_score_files/", score_files$method[i], "/", score_files$name[i], "/ref-", score_files$name[i], ".score.gz")
     if (!file.exists(pgs_i)) {
         score_files_to_do <- rbind(score_files_to_do, score_files[i, ])
@@ -126,12 +128,40 @@ for (i in 1:nrow(score_files)) {
         }
     }
 }
+if (!file.exists(weight_file)) {
+    log_add(log_file = log_file, message = "Combined weight file missing; regenerating raw scores to rebuild weight file.")
+    score_files_to_do <- copy(score_files)
+}
 log_add(log_file = log_file, message = paste0("After checking timestamps, ", nrow(score_files_to_do), "/", nrow(score_files), " score files will be used for raw target scoring."))
 # Sort score files to ensure consistent processing order
 score_files <- score_files_to_do[order(score_files_to_do$method, score_files_to_do$name), ]
 
 if (nrow(score_files) == 0) {
-    log_add(log_file = log_file, message = paste0("No score files to be processed for raw PGS generation."))
+    log_add(log_file = log_file, message = paste0("No score files to be processed for raw PGS generation. Ensuring method-level outputs exist."))
+    if (file.exists(weight_file)) {
+        weights_header <- fread(weight_file, nrows = 0)
+        for (i in 1:nrow(score_files_all)) {
+            cols_i <- names(weights_header)[grepl(paste0("^score_file_", i, "\\."), names(weights_header))]
+            if (length(cols_i) == 0) {
+                next
+            }
+            weights_subset <- fread(weight_file, select = c("SNP", "A1", "A2", cols_i))
+            weights_out_dir <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files_all$method[i], "/", score_files_all$name[i])
+            dir.create(weights_out_dir, recursive = TRUE, showWarnings = FALSE)
+            weights_out_new <- paste0(weights_out_dir, "/", opt$name, "-", score_files_all$method[i], "-", score_files_all$name[i], "-AllAncestry-raw.weights.txt")
+            setnames(weights_subset, old = cols_i, new = gsub(paste0("^score_file_", i, "\\."), paste0(score_files_all$method[i], "_", score_files_all$name[i], "_"), cols_i))
+            fwrite(weights_subset, weights_out_new, sep = " ", na = "NA", quote = FALSE)
+            log_add(log_file = log_file, message = paste0("Saved weight file for ", score_files_all$method[i], "/", score_files_all$name[i], ": ", weights_out_new))
+        }
+    }
+    # Ensure method name appears in per-method profile filenames
+    for (i in 1:nrow(score_files_all)) {
+        profiles_dir_i <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files_all$method[i], "/", score_files_all$name[i])
+        method_profile <- paste0(profiles_dir_i, "/", opt$name, "-", score_files_all$method[i], "-", score_files_all$name[i], "-AllAncestry-raw.profiles")
+        if (!file.exists(method_profile)) {
+            dir.create(profiles_dir_i, recursive = TRUE, showWarnings = FALSE)
+        }
+    }
     end.time <- Sys.time()
     time.taken <- end.time - start.time
     sink(file = log_file, append = T)
@@ -162,6 +192,11 @@ refdir <- read_param(config = opt$config, param = "refdir", return_obj = F)
 ref <- read_pvar(paste0(refdir, "/ref.chr"), chr = CHROMS)[, c("CHR", "SNP", "A1", "A2"), with = F]
 
 log_add(log_file = log_file, message = paste0("Generating raw, unscaled PGS for ALL individuals (", nrow(score_files), " score files)"))
+
+# Ensure we start with a fresh combined weight file when running
+if (file.exists(weight_file)) {
+    file.remove(weight_file)
+}
 
 # We will process score files and perform target scoring for one chromosome for efficiency
 for (chr_i in CHROMS) {
@@ -272,7 +307,8 @@ scores <- cbind(scores_ids, scores)
 ###
 log_add(log_file = log_file, message = "Saving allscore file for raw PGS...")
 dir.create(paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/"), recursive = T)
-fwrite(scores, paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", opt$name, "-AllAncestry-raw.profiles"), sep = " ", na = "NA", quote = F)
+combined_profiles_file <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", opt$name, "-AllAncestry-raw.profiles")
+fwrite(scores, combined_profiles_file, sep = " ", na = "NA", quote = F)
 
 
 ###
@@ -284,8 +320,10 @@ log_add(log_file = log_file, message = "Saving raw, unscaled polygenic scores fo
 for (i in 1:nrow(score_files)) {
     scores_i <- scores[, c("FID", "IID", names(scores)[grepl(paste0("^score_file_", i, "\\."), names(scores))]), with = F]
     names(scores_i) <- gsub(paste0("^score_file_", i, "\\."), paste0(score_files$method[i], "_", score_files$name[i], "_"), names(scores_i))
-    dir.create(paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i]), recursive = T)
-    fwrite(scores_i, paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i], "/", opt$name, "-", score_files$name[i], "-AllAncestry-raw.profiles"), sep = " ", na = "NA", quote = F)
+    profiles_dir_i <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i])
+    dir.create(profiles_dir_i, recursive = T)
+    profile_file_new <- paste0(profiles_dir_i, "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.profiles")
+    fwrite(scores_i, profile_file_new, sep = " ", na = "NA", quote = F)
 }
 
 log_add(log_file = log_file, message = paste0("Saved raw, unscaled polygenic scores for ALL individuals to: ", outdir, "/", opt$name, "/pgs_raw/AllAncestry/"))
@@ -294,7 +332,57 @@ weight_stat <- file.info(weight_file)
 if (!file.exists(weight_file) || is.na(weight_stat$size) || weight_stat$size == 0) {
     stop(paste0("Missing weight file after scoring: ", weight_file))
 }
+# Sanity check: ensure combined weight file has rows for all reference SNPs across chromosomes
+weight_rows <- nrow(fread(weight_file, select = "SNP"))
+expected_rows <- nrow(ref)
+if (weight_rows < expected_rows) {
+    stop(paste0("Combined weight file is incomplete: found ", weight_rows, " rows, expected ", expected_rows, "."))
+}
 log_add(log_file = log_file, message = paste0("All plink --score weights written to ", weight_file))
+
+# Save method-level weight files next to their profiles for transparency
+weights_header <- fread(weight_file, nrows = 0)
+for (i in 1:nrow(score_files)) {
+    cols_i <- names(weights_header)[grepl(paste0("^score_file_", i, "\\."), names(weights_header))]
+    if (length(cols_i) == 0) {
+        next
+    }
+    weights_subset <- fread(weight_file, select = c("SNP", "A1", "A2", cols_i))
+    weights_out_dir <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i])
+    dir.create(weights_out_dir, recursive = TRUE, showWarnings = FALSE)
+    weights_out_new <- paste0(weights_out_dir, "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.weights.txt")
+    setnames(weights_subset, old = cols_i, new = gsub(paste0("^score_file_", i, "\\."), paste0(score_files$method[i], "_", score_files$name[i], "_"), cols_i))
+    fwrite(weights_subset, weights_out_new, sep = " ", na = "NA", quote = FALSE)
+    log_add(log_file = log_file, message = paste0("Saved weight file for ", score_files$method[i], "/", score_files$name[i], ": ", weights_out_new))
+}
+
+# Optionally copy raw outputs to an external raw_pgs directory specified in the config
+if (!is.null(raw_pgs_dir) && !is.na(raw_pgs_dir)) {
+    copy_base <- paste0(raw_pgs_dir, "/", opt$name, "/pgs_raw/AllAncestry")
+    dir.create(copy_base, recursive = TRUE, showWarnings = FALSE)
+
+    # Copy combined outputs
+    file.copy(combined_profiles_file, paste0(copy_base, "/", basename(combined_profiles_file)), overwrite = TRUE)
+    file.copy(weight_file, paste0(copy_base, "/", basename(weight_file)), overwrite = TRUE)
+
+    # Copy per-method outputs
+    for (i in 1:nrow(score_files)) {
+        src_dir <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i])
+        dest_dir <- paste0(copy_base, "/", score_files$method[i], "/", score_files$name[i])
+        dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
+
+        src_profile <- paste0(src_dir, "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.profiles")
+        src_weight <- paste0(src_dir, "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.weights.txt")
+
+        if (file.exists(src_profile)) {
+            file.copy(src_profile, paste0(dest_dir, "/", basename(src_profile)), overwrite = TRUE)
+        }
+        if (file.exists(src_weight)) {
+            file.copy(src_weight, paste0(dest_dir, "/", basename(src_weight)), overwrite = TRUE)
+        }
+    }
+    log_add(log_file = log_file, message = paste0("Copied raw PGS outputs to ", copy_base))
+}
 
 end.time <- Sys.time()
 time.taken <- end.time - start.time

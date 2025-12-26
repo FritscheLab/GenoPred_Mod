@@ -46,6 +46,11 @@ def ancestry_munge(x, scaling=['continuous'], target_populations=None):
 
 # Define which pgs_methods are can be applied to any GWAS population
 pgs_methods_noneur = ['ptclump','lassosum','megaprs','prscs','dbslmm']
+raw_pgs_dir_config = config.get("raw_pgs_dir", None)
+if raw_pgs_dir_config in [None, "NA"]:
+  raw_pgs_copy_output = []
+else:
+  raw_pgs_copy_output = f"{raw_pgs_dir_config}/{{name}}/pgs_raw/AllAncestry/{{name}}-AllAncestry-raw.weights.score"
 
 ####
 # Projected PCs
@@ -110,7 +115,8 @@ rule target_pgs_i:
     "../envs/analysis.yaml"
   params:
     testing=config["testing"],
-    config_file = config["config_file"]
+    config_file = config["config_file"],
+    raw_pgs_dir = lambda wildcards: config["raw_pgs_dir"] if "raw_pgs_dir" in config and str(config["raw_pgs_dir"]) != "NA" else None
   shell:
     "Rscript ../Scripts/target_scoring/target_scoring_pipeline.R \
       --config {params.config_file} \
@@ -144,8 +150,9 @@ rule target_pgs_raw_i:
     rules.ref_pgs.output,
     rules.ref_pgs_raw.output
   output:
-    weight_file = f"{outdir}/{{name}}/pgs_raw/AllAncestry/weights/{{name}}-AllAncestry-raw.weights.score",
-    done = touch(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done")
+    weight_file = f"{outdir}/{{name}}/pgs_raw/AllAncestry/{{name}}-AllAncestry-raw.weights.score",
+    done = touch(f"{outdir}/reference/target_checks/{{name}}/target_pgs_raw.done"),
+    raw_pgs_dir = raw_pgs_copy_output
   benchmark:
     f"{outdir}/reference/benchmarks/target_pgs_raw_i-{{name}}.txt"
   log:
@@ -154,7 +161,8 @@ rule target_pgs_raw_i:
     "../envs/analysis.yaml"
   params:
     testing=config["testing"],
-    config_file = config["config_file"]
+    config_file = config["config_file"],
+    raw_pgs_dir = raw_pgs_dir_config if raw_pgs_dir_config not in [None, "NA"] else "NA"
   shell:
     "Rscript ../Scripts/target_scoring/target_scoring_pipeline_raw.R \
       --config {params.config_file} \

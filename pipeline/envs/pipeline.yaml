@@ -9,5 +9,6 @@ dependencies:
   - pandas=2.0.3
   - ghostscript=10.02.1
   - pip
+  - tqdm
   - pip:
       - gdown
