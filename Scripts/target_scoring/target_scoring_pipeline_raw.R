@@ -365,23 +365,78 @@ if (!is.null(raw_pgs_dir) && !is.na(raw_pgs_dir)) {
     file.copy(combined_profiles_file, paste0(copy_base, "/", basename(combined_profiles_file)), overwrite = TRUE)
     file.copy(weight_file, paste0(copy_base, "/", basename(weight_file)), overwrite = TRUE)
 
+    logs_copied <- 0
+    ref_profiles_copied <- 0
+
     # Copy per-method outputs
     for (i in 1:nrow(score_files)) {
-        src_dir <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", score_files$method[i], "/", score_files$name[i])
-        dest_dir <- paste0(copy_base, "/", score_files$method[i], "/", score_files$name[i])
+        method_i <- score_files$method[i]
+        name_i <- score_files$name[i]
+        src_dir <- paste0(outdir, "/", opt$name, "/pgs_raw/AllAncestry/", method_i, "/", name_i)
+        dest_dir <- paste0(copy_base, "/", method_i, "/", name_i)
         dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
 
-        src_profile <- paste0(src_dir, "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.profiles")
-        src_weight <- paste0(src_dir, "/", opt$name, "-", score_files$method[i], "-", score_files$name[i], "-AllAncestry-raw.weights.txt")
+        base_name <- paste0(opt$name, "-", method_i, "-", name_i, "-AllAncestry-raw")
+        src_profile <- paste0(src_dir, "/", opt$name, "-", method_i, "-", name_i, "-AllAncestry-raw.profiles")
+        src_weight <- paste0(src_dir, "/", opt$name, "-", method_i, "-", name_i, "-AllAncestry-raw.weights.txt")
 
         if (file.exists(src_profile)) {
-            file.copy(src_profile, paste0(dest_dir, "/", basename(src_profile)), overwrite = TRUE)
+            file.copy(src_profile, paste0(dest_dir, "/", base_name, ".profiles"), overwrite = TRUE)
         }
         if (file.exists(src_weight)) {
-            file.copy(src_weight, paste0(dest_dir, "/", basename(src_weight)), overwrite = TRUE)
+            file.copy(src_weight, paste0(dest_dir, "/", base_name, ".weights.txt"), overwrite = TRUE)
+        }
+
+        ref_raw_profile <- paste0(outdir, "/reference/pgs_score_files_raw/", method_i, "/", name_i, "/ref-", name_i, "-AllAncestry.profiles")
+        if (file.exists(ref_raw_profile)) {
+            file.copy(ref_raw_profile, paste0(dest_dir, "/", base_name, ".ref.profiles"), overwrite = TRUE)
+            ref_profiles_copied <- ref_profiles_copied + 1
+        }
+
+        log_candidates <- c(
+            paste0(outdir, "/reference/logs/prep_pgs_", method_i, "_i-", name_i, ".log")
+        )
+        if (grepl("_multi$", method_i)) {
+            base_method <- sub("_multi$", "", method_i)
+            log_candidates <- c(
+                log_candidates,
+                paste0(outdir, "/reference/logs/prep_pgs_multi_i-", name_i, "-", base_method, ".log")
+            )
+        } else {
+            log_candidates <- c(
+                log_candidates,
+                paste0(outdir, "/reference/logs/prep_pgs_multi_i-", name_i, "-", method_i, ".log")
+            )
+        }
+        if (grepl("^tlprs_", method_i)) {
+            tlprs_method <- sub("^tlprs_", "", method_i)
+            log_candidates <- c(
+                log_candidates,
+                paste0(outdir, "/reference/logs/prep_pgs_tlprs_i-", name_i, "-", tlprs_method, ".log")
+            )
+        }
+        if (method_i == "external") {
+            log_candidates <- c(
+                log_candidates,
+                paste0(outdir, "/reference/logs/prep_pgs_external_i-", name_i, ".log")
+            )
+        }
+        log_candidates <- unique(log_candidates)
+        for (log_src in log_candidates) {
+            if (file.exists(log_src)) {
+                file.copy(log_src, paste0(dest_dir, "/", base_name, ".prep.log"), overwrite = TRUE)
+                logs_copied <- logs_copied + 1
+                break
+            }
         }
     }
     log_add(log_file = log_file, message = paste0("Copied raw PGS outputs to ", copy_base))
+    if (logs_copied > 0) {
+        log_add(log_file = log_file, message = paste0("Copied prep_pgs logs into per-method folders under ", copy_base))
+    }
+    if (ref_profiles_copied > 0) {
+        log_add(log_file = log_file, message = paste0("Copied reference raw profiles into per-method folders under ", copy_base))
+    }
 }
 
 end.time <- Sys.time()
